@@ -41,7 +41,12 @@ const EmailAnalyzer = ({ onAnalyze, isAnalyzing, onClearForm }: EmailAnalyzerPro
     onAnalyze({ subject, body });
   };
 
-  const handleAnalyzeAnother = () => {
+  const handleAnalyzeAnother = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('EmailAnalyzer: handleAnalyzeAnother called');
     setSubject("");
     setBody("");
     setResult(null);
@@ -325,9 +330,10 @@ const EmailAnalyzer = ({ onAnalyze, isAnalyzing, onClearForm }: EmailAnalyzerPro
               Would you like to analyze another email?
             </p>
             <Button
-              onClick={handleAnalyzeAnother}
+              onClick={(e) => handleAnalyzeAnother(e)}
               variant="outline"
               className="border-green-300 text-green-700 hover:bg-green-100"
+              type="button"
             >
               <Mail className="w-4 h-4 mr-2" />
               Analyze Another Email

@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Shield, Mail, Image, BarChart3, AlertTriangle, CheckCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Shield, Mail, Image, BarChart3, AlertTriangle, CheckCircle, FileText } from "lucide-react";
+import { Link } from "react-router-dom";
 import EmailAnalyzer from "@/components/EmailAnalyzer";
 import DeepfakeDetector from "@/components/DeepfakeDetector";
 import AnalysisComplete from "@/components/AnalysisComplete";
@@ -27,6 +29,7 @@ const Index = () => {
   const [analysisHistory, setAnalysisHistory] = useState<AnalysisHistory[]>([]);
   const [showCompletion, setShowCompletion] = useState(false);
   const [lastAnalysisType, setLastAnalysisType] = useState<'email' | 'deepfake' | null>(null);
+  const [currentDeepfakeResult, setCurrentDeepfakeResult] = useState<any>(null);
   const [stats, setStats] = useState({
     totalScans: 0,
     phishingDetected: 0,
@@ -51,8 +54,8 @@ const Index = () => {
     const newStats = {
       totalScans: analysisHistory.length,
       phishingDetected: analysisHistory.filter(h => h.type === 'email' && h.result.label === 'Phishing').length,
-      deepfakesFound: analysisHistory.filter(h => h.type === 'deepfake' && h.result.label === 'Deepfake').length,
-      safeContent: analysisHistory.filter(h => h.result.label === 'Safe' || h.result.label === 'Real').length
+      deepfakesFound: analysisHistory.filter(h => h.type === 'deepfake' && h.result.label === 'AI-Generated').length,
+      safeContent: analysisHistory.filter(h => h.result.label === 'Safe' || h.result.label === 'Human-Created').length
     };
     setStats(newStats);
   }, [analysisHistory]);
@@ -78,6 +81,28 @@ const Index = () => {
     localStorage.setItem('cyberguard-analysis-history', JSON.stringify(updatedHistory));
   };
 
+  const createReport = async (analysisData: any, type: string) => {
+    try {
+      const response = await fetch('http://localhost:8000/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type,
+          analysis_data: analysisData,
+          user_notes: ''
+        }),
+      });
+
+      if (response.ok) {
+        console.log('Report created successfully');
+      }
+    } catch (error) {
+      console.error('Failed to create report:', error);
+    }
+  };
+
   const handleEmailAnalysis = async (emailData: { subject: string; body: string }) => {
     setIsAnalyzing(true);
     
@@ -98,6 +123,9 @@ const Index = () => {
       saveAnalysisToHistory('email', result);
       setLastAnalysisType('email');
       setShowCompletion(true);
+      
+      // Create report automatically
+      await createReport(result, 'email');
       
       toast({
         title: "Email Analysis Complete",
@@ -128,6 +156,10 @@ const Index = () => {
         saveAnalysisToHistory('email', demoResult);
         setLastAnalysisType('email');
         setShowCompletion(true);
+        
+        // Create report automatically
+        await createReport(demoResult, 'email');
+        
         toast({
           title: "Email Analysis Complete (Demo Mode)",
           description: `Detected: ${demoResult.label} (${demoResult.confidence}% confidence)`,
@@ -163,8 +195,12 @@ const Index = () => {
       
       const result = await response.json();
       saveAnalysisToHistory('deepfake', result);
+      setCurrentDeepfakeResult(result);
       setLastAnalysisType('deepfake');
       setShowCompletion(true);
+      
+      // Create report automatically
+      await createReport(result, result.file_type || 'image');
       
       toast({
         title: "Media Analysis Complete",
@@ -184,18 +220,23 @@ const Index = () => {
         // Use demo data when backend is not available
         const isVideo = file.type.startsWith('video/');
         const demoResult = {
-          label: Math.random() > 0.7 ? 'Deepfake' : 'Real',
+          label: Math.random() > 0.7 ? 'AI-Generated' : 'Human-Created',
           confidence: Math.floor(Math.random() * 40) + 30, // 30-70% confidence
           trust_score: Math.floor(Math.random() * 40) + 30,
           reason_analysis: Math.random() > 0.7 
-            ? 'Moderate confidence deepfake detection. The media shows characteristics commonly associated with AI-generated or manipulated content.'
-            : 'Media appears to be authentic. No significant signs of manipulation detected.',
+            ? 'Moderate confidence AI-generated detection. This media appears to be artificially generated using AI technology.'
+            : 'This media appears to be created by humans without AI manipulation.',
           frames_analyzed: isVideo ? Math.floor(Math.random() * 20) + 10 : undefined
         };
         
         saveAnalysisToHistory('deepfake', demoResult);
+        setCurrentDeepfakeResult(demoResult);
         setLastAnalysisType('deepfake');
         setShowCompletion(true);
+        
+        // Create report automatically
+        await createReport(demoResult, isVideo ? 'video' : 'image');
+        
         toast({
           title: "Media Analysis Complete (Demo Mode)",
           description: `Detected: ${demoResult.label} (${demoResult.confidence}% confidence)`,
@@ -214,15 +255,24 @@ const Index = () => {
   };
 
   const handleAnalyzeAnother = () => {
+    console.log('handleAnalyzeAnother called');
     setShowCompletion(false);
     setLastAnalysisType(null);
-    // The individual components will handle clearing their forms
+    toast({
+      title: "Ready for new analysis",
+      description: "You can now analyze another email or media file.",
+    });
   };
 
   const handleClearForm = () => {
+    console.log('handleClearForm called');
     setShowCompletion(false);
     setLastAnalysisType(null);
-    // The individual components will handle clearing their forms
+    setCurrentDeepfakeResult(null);
+    toast({
+      title: "Form cleared",
+      description: "You can now start a new analysis.",
+    });
   };
 
   return (
@@ -241,19 +291,29 @@ const Index = () => {
               </div>
             </div>
             
-            {/* Stats Summary */}
-            <div className="hidden md:flex items-center space-x-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-primary">{stats.totalScans}</div>
-                <div className="text-xs text-muted-foreground">Total Scans</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-destructive">{stats.phishingDetected + stats.deepfakesFound}</div>
-                <div className="text-xs text-muted-foreground">Threats Found</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">{stats.safeContent}</div>
-                <div className="text-xs text-muted-foreground">Safe Content</div>
+            {/* Navigation and Stats */}
+            <div className="flex items-center space-x-4">
+              <Link to="/reports">
+                <Button variant="outline" className="flex items-center space-x-2">
+                  <FileText className="w-4 h-4" />
+                  <span>View Reports</span>
+                </Button>
+              </Link>
+              
+              {/* Stats Summary */}
+              <div className="hidden md:flex items-center space-x-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-primary">{stats.totalScans}</div>
+                  <div className="text-xs text-muted-foreground">Total Scans</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-destructive">{stats.phishingDetected + stats.deepfakesFound}</div>
+                  <div className="text-xs text-muted-foreground">Threats Found</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{stats.safeContent}</div>
+                  <div className="text-xs text-muted-foreground">Safe Content</div>
+                </div>
               </div>
             </div>
           </div>
@@ -281,9 +341,9 @@ const Index = () => {
                 Analyze email content for suspicious patterns and phishing attempts
               </p>
             </div>
-            <EmailAnalyzer 
-              onAnalyze={handleEmailAnalysis}
-              isAnalyzing={isAnalyzing}
+        <EmailAnalyzer 
+          onAnalyze={handleEmailAnalysis}
+          isAnalyzing={isAnalyzing}
               onClearForm={handleClearForm}
             />
           </TabsContent>
@@ -295,24 +355,14 @@ const Index = () => {
                 Upload images or videos to detect AI-generated or manipulated content
               </p>
             </div>
-            <DeepfakeDetector 
-              onAnalyze={handleDeepfakeAnalysis}
-              isAnalyzing={isAnalyzing}
-              onClearForm={handleClearForm}
-            />
+        <DeepfakeDetector 
+          onAnalyze={handleDeepfakeAnalysis}
+          isAnalyzing={isAnalyzing}
+          onClearForm={handleClearForm}
+          result={currentDeepfakeResult}
+        />
           </TabsContent>
         </Tabs>
-
-        {/* Analysis Complete Message */}
-        {showCompletion && lastAnalysisType && (
-          <div className="max-w-4xl mx-auto mt-6">
-            <AnalysisComplete
-              type={lastAnalysisType}
-              onAnalyzeAnother={handleAnalyzeAnother}
-              onClearForm={handleClearForm}
-            />
-          </div>
-        )}
 
         {/* Recent Analysis History */}
         {analysisHistory.length > 0 && (

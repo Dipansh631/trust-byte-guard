@@ -12,6 +12,7 @@ interface DeepfakeDetectorProps {
   onAnalyze: (file: File) => void;
   isAnalyzing: boolean;
   onClearForm?: () => void;
+  result?: AnalysisResult | null;
 }
 
 interface AnalysisResult {
@@ -22,10 +23,13 @@ interface AnalysisResult {
   frames_analyzed?: number;
 }
 
-const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetectorProps) => {
+const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm, result: propResult }: DeepfakeDetectorProps) => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [result, setResult] = useState<AnalysisResult | null>(null);
+
+  // Use prop result if available, otherwise use local state
+  const displayResult = propResult || result;
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -63,8 +67,8 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
     reader.readAsDataURL(file);
 
     toast({
-      title: "File loaded",
-      description: "Your media is ready for analysis.",
+      title: "Media uploaded successfully",
+      description: "Now ready for analysis",
     });
   };
 
@@ -86,14 +90,44 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
     onAnalyze(selectedFile);
   };
 
-  const handleAnalyzeAnother = () => {
+  const handleAnalyzeAnother = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('DeepfakeDetector: handleAnalyzeAnother called');
+    
+    // Clear current state
     setSelectedFile(null);
     setPreviewUrl(null);
     setResult(null);
+    
+    // Trigger file input dialog
+    const fileInput = document.getElementById('media-upload') as HTMLInputElement;
+    if (fileInput) {
+      fileInput.click();
+    }
+    
     onClearForm?.();
+  };
+
+  const handleClearForm = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('DeepfakeDetector: handleClearForm called');
+    
+    // Clear all state
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setResult(null);
+    
+    onClearForm?.();
+    
     toast({
-      title: "Ready for new analysis",
-      description: "Please select a new media file to analyze.",
+      title: "Form cleared",
+      description: "Upload area is ready for a new file.",
     });
   };
 
@@ -105,14 +139,14 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
   };
 
   const getLabelIcon = (label: string) => {
-    if (label === "Deepfake") {
+    if (label === "AI-Generated") {
       return <AlertTriangle className="w-5 h-5 text-red-500" />;
     }
     return <CheckCircle className="w-5 h-5 text-green-500" />;
   };
 
   const getLabelColor = (label: string) => {
-    if (label === "Deepfake") return "destructive";
+    if (label === "AI-Generated") return "destructive";
     return "default";
   };
 
@@ -217,13 +251,13 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
       </Card>
 
       {/* Results Display */}
-      {result && (
+      {displayResult && (
         <div className="grid md:grid-cols-2 gap-6">
           {/* Confidence Gauge */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center space-x-2">
-                {getLabelIcon(result.label)}
+                {getLabelIcon(displayResult.label)}
                 <span>Analysis Result</span>
               </CardTitle>
             </CardHeader>
@@ -231,11 +265,11 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
               <div className="flex justify-center">
                 <div className="w-32 h-32">
                   <CircularProgressbar
-                    value={result.confidence}
-                    text={`${result.confidence}%`}
+                    value={displayResult.confidence}
+                    text={`${displayResult.confidence}%`}
                     styles={buildStyles({
-                      pathColor: getConfidenceColor(result.confidence),
-                      textColor: getConfidenceColor(result.confidence),
+                      pathColor: getConfidenceColor(displayResult.confidence),
+                      textColor: getConfidenceColor(displayResult.confidence),
                       trailColor: '#e5e7eb',
                       textSize: '16px',
                     })}
@@ -244,18 +278,42 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
               </div>
               
               <div className="text-center space-y-2">
-                <Badge variant={getLabelColor(result.label)} className="text-lg px-3 py-1">
-                  {result.label}
+                <Badge variant={getLabelColor(displayResult.label)} className="text-lg px-3 py-1">
+                  {displayResult.label}
                 </Badge>
+                
+                {/* AI Generation Status */}
+                <div className="mt-3 p-3 rounded-lg bg-muted/50">
+                  <div className="flex items-center justify-center space-x-2">
+                    {displayResult.label === "AI-Generated" ? (
+                      <>
+                        <AlertTriangle className="w-5 h-5 text-red-500" />
+                        <span className="font-semibold text-red-700">AI-Generated Content Detected</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-5 h-5 text-green-500" />
+                        <span className="font-semibold text-green-700">Human-Created Content</span>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {displayResult.label === "AI-Generated" 
+                      ? "This media was created using artificial intelligence"
+                      : "This media was created by humans without AI assistance"
+                    }
+                  </p>
+                </div>
+                
                 <p className="text-sm text-muted-foreground">
-                  Confidence: {result.confidence}%
+                  Confidence: {displayResult.confidence}%
                 </p>
                 <p className="text-sm text-muted-foreground">
-                  Trust Score: {result.trust_score}%
+                  Trust Score: {displayResult.trust_score}%
                 </p>
-                {result.frames_analyzed && (
+                {displayResult.frames_analyzed && (
                   <p className="text-xs text-muted-foreground">
-                    Frames Analyzed: {result.frames_analyzed}
+                    Frames Analyzed: {displayResult.frames_analyzed}
                   </p>
                 )}
               </div>
@@ -271,23 +329,23 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
               <div>
                 <h4 className="font-medium mb-2">Reason Analysis</h4>
                 <p className="text-sm text-muted-foreground">
-                  {result.reason_analysis}
+                  {displayResult.reason_analysis}
                 </p>
               </div>
 
               <div>
                 <h4 className="font-medium mb-2">Trust Score</h4>
-                <Progress value={result.trust_score} className="h-2" />
+                <Progress value={displayResult.trust_score} className="h-2" />
                 <p className="text-xs text-muted-foreground mt-1">
-                  {result.trust_score}% trust level
+                  {displayResult.trust_score}% trust level
                 </p>
               </div>
 
-              {result.frames_analyzed && (
+              {displayResult.frames_analyzed && (
                 <div>
                   <h4 className="font-medium mb-2">Video Analysis</h4>
                   <p className="text-sm text-muted-foreground">
-                    Analyzed {result.frames_analyzed} frames from the video for consistency and authenticity.
+                    Analyzed {displayResult.frames_analyzed} frames from the video for consistency and authenticity.
                   </p>
                 </div>
               )}
@@ -297,7 +355,7 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
       )}
 
       {/* Analyze Another Button */}
-      {result && (
+      {displayResult && (
         <Card className="p-4 bg-green-50 border-green-200">
           <div className="text-center space-y-3">
             <div className="flex items-center justify-center space-x-2 text-green-700">
@@ -312,17 +370,19 @@ const DeepfakeDetector = ({ onAnalyze, isAnalyzing, onClearForm }: DeepfakeDetec
                 onClick={handleAnalyzeAnother}
                 variant="outline"
                 className="border-green-300 text-green-700 hover:bg-green-100"
+                type="button"
               >
                 <ImageIcon className="w-4 h-4 mr-2" />
                 Analyze Another File
               </Button>
               <Button
-                onClick={handleRemoveFile}
+                onClick={handleClearForm}
                 variant="outline"
                 className="border-blue-300 text-blue-700 hover:bg-blue-100"
+                type="button"
               >
                 <X className="w-4 h-4 mr-2" />
-                Remove Current File
+                Clear Form
               </Button>
             </div>
           </div>
