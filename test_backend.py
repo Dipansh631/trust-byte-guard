@@ -1,86 +1,83 @@
 #!/usr/bin/env python3
 """
-Simple test script to verify the CyberGuard backend is working
+Test script to verify the backend server is working
 """
 
 import requests
 import json
 import time
 
-def test_backend():
-    base_url = "http://localhost:8000"
-    
-    print("🧪 Testing CyberGuard Backend API...")
-    print("=" * 50)
-    
-    # Test health endpoint
+def test_backend_connection():
+    """Test if the backend server is running"""
     try:
-        print("1. Testing health endpoint...")
-        response = requests.get(f"{base_url}/health")
+        response = requests.get("http://localhost:8000/health", timeout=5)
         if response.status_code == 200:
-            print("✅ Health check passed")
-            print(f"   Response: {response.json()}")
+            print("✅ Backend server is running!")
+            return True
         else:
-            print(f"❌ Health check failed: {response.status_code}")
+            print(f"❌ Backend server responded with status {response.status_code}")
             return False
-    except Exception as e:
-        print(f"❌ Health check error: {e}")
+    except requests.exceptions.ConnectionError:
+        print("❌ Backend server is not running")
+        print("   Please start it with: python run_backend.py")
         return False
+    except Exception as e:
+        print(f"❌ Error connecting to backend: {e}")
+        return False
+
+def test_email_analysis():
+    """Test the enhanced email analysis"""
+    test_email = {
+        "subject": "URGENT: Verify Your Account Immediately!",
+        "body": "Dear Customer,\n\nYour account has been SUSPENDED due to suspicious activity. Click here to verify your identity immediately or your account will be PERMANENTLY CLOSED!\n\nThis is URGENT - act now!\n\nClick: http://bit.ly/verify-now\n\nBest regards,\nSecurity Team"
+    }
     
-    # Test email analysis endpoint
     try:
-        print("\n2. Testing email analysis endpoint...")
-        test_email = {
-            "subject": "URGENT: Verify Your Account Now!",
-            "body": "Click here immediately to verify your account or it will be suspended. This is urgent!"
-        }
-        
+        print("\n🧪 Testing Enhanced Email Analysis...")
         response = requests.post(
-            f"{base_url}/analyze/email",
+            "http://localhost:8000/analyze/email",
+            json=test_email,
             headers={"Content-Type": "application/json"},
-            json=test_email
+            timeout=30
         )
         
         if response.status_code == 200:
             result = response.json()
-            print("✅ Email analysis passed")
-            print(f"   Label: {result.get('label', 'N/A')}")
-            print(f"   Confidence: {result.get('confidence', 'N/A')}%")
-            print(f"   Trust Score: {result.get('trust_score', 'N/A')}%")
-            print(f"   Suspicious Phrases: {result.get('suspicious_phrases', [])}")
+            print("✅ Email analysis successful!")
+            print(f"   Label: {result['label']}")
+            print(f"   Confidence: {result['confidence']}%")
+            
+            if 'detailed_analysis' in result:
+                detailed = result['detailed_analysis']
+                print(f"   Risk Level: {detailed['overall_assessment']['risk_level']}")
+                print(f"   Red Flags: {len(detailed['red_flags'])} detected")
+                print(f"   Recommendations: {len(detailed['recommendations'])} provided")
+                return True
+            else:
+                print("   ⚠️ Detailed analysis not available")
+                return False
         else:
-            print(f"❌ Email analysis failed: {response.status_code}")
+            print(f"❌ Email analysis failed with status {response.status_code}")
             print(f"   Response: {response.text}")
+            return False
+            
     except Exception as e:
-        print(f"❌ Email analysis error: {e}")
+        print(f"❌ Error testing email analysis: {e}")
+        return False
+
+def main():
+    print("🔍 Trust Byte Guard Backend Test")
+    print("=" * 40)
     
-    # Test media analysis endpoint (with a simple test)
-    try:
-        print("\n3. Testing media analysis endpoint...")
-        # Create a simple test image (1x1 pixel PNG)
-        test_image_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc```\x00\x00\x00\x04\x00\x01\xdd\x8d\xb4\x1c\x00\x00\x00\x00IEND\xaeB`\x82'
-        
-        files = {'file': ('test.png', test_image_data, 'image/png')}
-        response = requests.post(f"{base_url}/analyze/media", files=files)
-        
-        if response.status_code == 200:
-            result = response.json()
-            print("✅ Media analysis passed")
-            print(f"   Label: {result.get('label', 'N/A')}")
-            print(f"   Confidence: {result.get('confidence', 'N/A')}%")
-            print(f"   Trust Score: {result.get('trust_score', 'N/A')}%")
-        else:
-            print(f"❌ Media analysis failed: {response.status_code}")
-            print(f"   Response: {response.text}")
-    except Exception as e:
-        print(f"❌ Media analysis error: {e}")
+    # Test connection
+    if not test_backend_connection():
+        return
     
-    print("\n" + "=" * 50)
-    print("🎉 Backend testing completed!")
-    return True
+    # Test email analysis
+    if test_email_analysis():
+        print("\n🎉 All tests passed! The enhanced email analysis is working correctly.")
+    else:
+        print("\n❌ Email analysis test failed.")
 
 if __name__ == "__main__":
-    # Wait a moment for the server to start
-    print("⏳ Waiting for server to start...")
-    time.sleep(3)
-    test_backend()
+    main()

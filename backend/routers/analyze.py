@@ -16,24 +16,13 @@ class EmailAnalysisRequest(BaseModel):
 
 @router.post("/email")
 async def analyze_email(request: Request, email_data: EmailAnalysisRequest) -> Dict[str, Any]:
-    """Analyze email for phishing detection"""
+    """Analyze email for phishing detection with detailed breakdown"""
     try:
-        # Combine subject and body for analysis
-        full_text = f"Subject: {email_data.subject}\n\nBody: {email_data.body}"
-        
-        # Get ML-based analysis
+        # Get detailed analysis from the classifier
         clf = request.app.state.text_classifier
-        result = clf.predict_suspicion(full_text)
+        result = clf.analyze_email_detailed(email_data.subject, email_data.body)
         
-        return {
-            "label": result["label"],
-            "confidence": result["confidence"],
-            "trust_score": result["trust_score"],
-            "suspicious_phrases": result["suspicious_phrases"],
-            "reason_analysis": result["reason_analysis"],
-            "raw_score": result["raw_score"],
-            "model": result["model"]
-        }
+        return result
         
     except Exception as e:
         return {
@@ -43,12 +32,24 @@ async def analyze_email(request: Request, email_data: EmailAnalysisRequest) -> D
             "suspicious_phrases": [],
             "reason_analysis": f"Error analyzing email: {str(e)}",
             "raw_score": 0.0,
-            "model": "error"
+            "model": "error",
+            "detailed_analysis": {
+                "overall_assessment": {
+                    "label": "Error",
+                    "confidence": 0,
+                    "risk_level": "UNKNOWN",
+                    "summary": f"Analysis failed: {str(e)}"
+                },
+                "pattern_analysis": {},
+                "technical_analysis": {},
+                "recommendations": ["Contact support if this error persists"],
+                "red_flags": []
+            }
         }
 
 
 @router.post("/media")
-async def analyze_media(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def analyze_media(request: Request, file: UploadFile = File(...)) -> Dict[str, Any]:
     """Analyze uploaded media for deepfake detection"""
     try:
         # Read file contents

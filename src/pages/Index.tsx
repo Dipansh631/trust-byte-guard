@@ -9,6 +9,7 @@ import EmailAnalyzer from "@/components/EmailAnalyzer";
 import DeepfakeDetector from "@/components/DeepfakeDetector";
 import AnalysisComplete from "@/components/AnalysisComplete";
 import { toast } from "@/hooks/use-toast";
+import { getApiBase, healthCheck } from "@/lib/api";
 
 interface AnalysisHistory {
   id: string;
@@ -83,7 +84,7 @@ const Index = () => {
 
   const createReport = async (analysisData: any, type: string) => {
     try {
-      const response = await fetch('http://localhost:8000/reports', {
+      const response = await fetch(`${getApiBase()}/reports`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -97,9 +98,12 @@ const Index = () => {
 
       if (response.ok) {
         console.log('Report created successfully');
+      } else {
+        console.log('Report endpoint not available, skipping report creation');
       }
     } catch (error) {
-      console.error('Failed to create report:', error);
+      // Silently handle report creation errors - this is not critical functionality
+      console.log('Report creation skipped (endpoint not available)');
     }
   };
 
@@ -107,7 +111,11 @@ const Index = () => {
     setIsAnalyzing(true);
     
     try {
-      const response = await fetch('http://localhost:8000/analyze/email', {
+      const isUp = await healthCheck(800);
+      if (!isUp) {
+        throw new TypeError('Failed to fetch');
+      }
+      const response = await fetch(`${getApiBase()}/analyze/email`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -124,8 +132,10 @@ const Index = () => {
       setLastAnalysisType('email');
       setShowCompletion(true);
       
-      // Create report automatically
-      await createReport(result, 'email');
+      // Create report automatically (non-blocking)
+      createReport(result, 'email').catch(() => {
+        // Silently handle report creation errors
+      });
       
       toast({
         title: "Email Analysis Complete",
@@ -138,27 +148,142 @@ const Index = () => {
       if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
         toast({
           title: "Backend Server Not Running",
-          description: "Please start the backend server at localhost:8000. Using demo mode for now.",
+          description: `Backend not reachable at ${getApiBase()}. Using demo mode for now.`,
           variant: "destructive",
         });
         
         // Use demo data when backend is not available
+        const subjectLower = emailData.subject.toLowerCase();
+        const bodyLower = emailData.body.toLowerCase();
+        const fullText = `${emailData.subject} ${emailData.body}`.toLowerCase();
+        
+        // Analyze for phishing indicators
+        const urgencyWords = ['urgent', 'immediately', 'asap', 'right now', 'act now', 'limited time'];
+        const authorityWords = ['verify', 'confirm', 'update', 'validate', 'security alert', 'account locked'];
+        const financialWords = ['free money', 'prize', 'winner', 'congratulations', 'lottery'];
+        const actionWords = ['click here', 'click now', 'verify now', 'reset password'];
+        const threatWords = ['account will be closed', 'permanent suspension', 'legal action'];
+        
+        const urgencyScore = urgencyWords.filter(word => fullText.includes(word)).length;
+        const authorityScore = authorityWords.filter(word => fullText.includes(word)).length;
+        const financialScore = financialWords.filter(word => fullText.includes(word)).length;
+        const actionScore = actionWords.filter(word => fullText.includes(word)).length;
+        const threatScore = threatWords.filter(word => fullText.includes(word)).length;
+        
+        const totalSuspiciousScore = urgencyScore + authorityScore + financialScore + actionScore + threatScore;
+        const hasUrls = fullText.includes('http') || fullText.includes('www.');
+        const hasExclamation = (emailData.subject + emailData.body).split('!').length > 3;
+        
+        const isPhishing = totalSuspiciousScore >= 2 || (urgencyScore >= 1 && hasUrls);
+        const confidence = isPhishing ? Math.min(95, 50 + (totalSuspiciousScore * 15) + (hasUrls ? 20 : 0) + (hasExclamation ? 10 : 0)) : Math.max(5, 50 - (totalSuspiciousScore * 10));
+        
+        const suspiciousPhrases = [];
+        if (urgencyScore > 0) suspiciousPhrases.push(...urgencyWords.filter(word => fullText.includes(word)));
+        if (authorityScore > 0) suspiciousPhrases.push(...authorityWords.filter(word => fullText.includes(word)));
+        if (financialScore > 0) suspiciousPhrases.push(...financialWords.filter(word => fullText.includes(word)));
+        if (actionScore > 0) suspiciousPhrases.push(...actionWords.filter(word => fullText.includes(word)));
+        if (threatScore > 0) suspiciousPhrases.push(...threatWords.filter(word => fullText.includes(word)));
+        
         const demoResult = {
-          label: emailData.subject.toLowerCase().includes('urgent') ? 'Phishing' : 'Safe',
-          confidence: emailData.subject.toLowerCase().includes('urgent') ? 85 : 15,
-          trust_score: emailData.subject.toLowerCase().includes('urgent') ? 85 : 15,
-          suspicious_phrases: emailData.subject.toLowerCase().includes('urgent') ? ['urgent'] : [],
-          reason_analysis: emailData.subject.toLowerCase().includes('urgent') 
-            ? 'High confidence phishing detection. Detected suspicious phrases: urgent. This email contains characteristics commonly found in phishing attempts.'
-            : 'Email appears to be legitimate. No suspicious patterns detected.'
+          label: isPhishing ? 'Phishing' : 'Safe',
+          confidence: Math.round(confidence),
+          trust_score: Math.round(confidence),
+          suspicious_phrases: [...new Set(suspiciousPhrases)], // Remove duplicates
+          reason_analysis: isPhishing 
+            ? `High confidence phishing detection. Detected ${totalSuspiciousScore} suspicious patterns. This email contains characteristics commonly found in phishing attempts.`
+            : 'Email appears to be legitimate. No suspicious patterns detected.',
+          detailed_analysis: {
+            overall_assessment: {
+              label: isPhishing ? 'Phishing' : 'Safe',
+              confidence: Math.round(confidence),
+              risk_level: confidence >= 80 ? 'HIGH RISK' : confidence >= 60 ? 'MEDIUM RISK' : confidence >= 40 ? 'LOW RISK' : 'SAFE',
+              summary: isPhishing 
+                ? `This email shows ${totalSuspiciousScore > 3 ? 'STRONG' : totalSuspiciousScore > 1 ? 'MODERATE' : 'WEAK'} indicators of phishing with ${totalSuspiciousScore} suspicious patterns detected.`
+                : 'This email appears to be legitimate with minimal suspicious patterns detected.'
+            },
+            pattern_analysis: {
+              urgency_indicators: {
+                score: urgencyScore,
+                patterns_found: urgencyWords.filter(word => fullText.includes(word)),
+                explanation: 'High urgency language is commonly used in phishing emails to pressure victims into quick action.'
+              },
+              authority_claims: {
+                score: authorityScore,
+                patterns_found: authorityWords.filter(word => fullText.includes(word)),
+                explanation: 'Phishing emails often impersonate legitimate authorities or institutions.'
+              },
+              financial_incentives: {
+                score: financialScore,
+                patterns_found: financialWords.filter(word => fullText.includes(word)),
+                explanation: 'Offers of money, prizes, or financial benefits are common phishing tactics.'
+              },
+              action_requirements: {
+                score: actionScore,
+                patterns_found: actionWords.filter(word => fullText.includes(word)),
+                explanation: 'Phishing emails typically require immediate action from the victim.'
+              },
+              social_engineering: {
+                score: 0,
+                patterns_found: [],
+                explanation: 'Trust-building language is used to make phishing attempts appear legitimate.'
+              },
+              threats_and_pressure: {
+                score: threatScore,
+                patterns_found: threatWords.filter(word => fullText.includes(word)),
+                explanation: 'Threats of account closure or legal action are common phishing tactics.'
+              }
+            },
+            technical_analysis: {
+              urls_and_links: {
+                total_urls: hasUrls ? 1 : 0,
+                suspicious_urls: hasUrls ? ['suspicious link detected'] : [],
+                shortened_urls: [],
+                explanation: 'Suspicious or shortened URLs are often used to hide malicious destinations.'
+              },
+              email_structure: {
+                subject_length: emailData.subject.length,
+                body_length: emailData.body.length,
+                excessive_punctuation: hasExclamation ? 4 : 0,
+                all_caps_words: [],
+                suspicious_formatting: hasExclamation ? ['Excessive exclamation marks'] : [],
+                explanation: 'Unusual formatting, excessive punctuation, or all-caps text can indicate phishing.'
+              },
+              language_quality: {
+                suspicious_patterns: [],
+                quality_score: 85,
+                explanation: 'Poor grammar, unusual language patterns, or suspicious phrasing can indicate phishing.'
+              }
+            },
+            recommendations: isPhishing ? [
+              '🚨 DO NOT click on any links in this email',
+              '🚨 DO NOT provide any personal information',
+              '🚨 DO NOT download any attachments',
+              '🚨 Delete this email immediately',
+              '📧 Report this email as phishing to your email provider',
+              '🔍 Verify any claims by contacting the organization directly through official channels'
+            ] : [
+              '✅ This email appears to be safe',
+              '🔍 Always verify sender identity before taking any action',
+              '🔗 Be cautious with any links, even in legitimate emails'
+            ],
+            red_flags: isPhishing ? [
+              urgencyScore >= 2 ? 'Multiple urgency indicators detected' : null,
+              threatScore > 0 ? 'Threats or pressure tactics used' : null,
+              financialScore > 0 ? 'Unsolicited financial offers or prizes' : null,
+              hasUrls ? 'Suspicious links present' : null,
+              hasExclamation ? 'Excessive exclamation marks' : null
+            ].filter(Boolean) : []
+          }
         };
         
         saveAnalysisToHistory('email', demoResult);
         setLastAnalysisType('email');
         setShowCompletion(true);
         
-        // Create report automatically
-        await createReport(demoResult, 'email');
+        // Create report automatically (non-blocking)
+        createReport(demoResult, 'email').catch(() => {
+          // Silently handle report creation errors
+        });
         
         toast({
           title: "Email Analysis Complete (Demo Mode)",
@@ -181,10 +306,14 @@ const Index = () => {
     setIsAnalyzing(true);
     
     try {
+      const isUp = await healthCheck(800);
+      if (!isUp) {
+        throw new TypeError('Failed to fetch');
+      }
       const formData = new FormData();
       formData.append('file', file);
       
-      const response = await fetch('http://localhost:8000/analyze/media', {
+      const response = await fetch(`${getApiBase()}/analyze/media`, {
         method: 'POST',
         body: formData,
       });
@@ -199,8 +328,10 @@ const Index = () => {
       setLastAnalysisType('deepfake');
       setShowCompletion(true);
       
-      // Create report automatically
-      await createReport(result, result.file_type || 'image');
+      // Create report automatically (non-blocking)
+      createReport(result, result.file_type || 'image').catch(() => {
+        // Silently handle report creation errors
+      });
       
       toast({
         title: "Media Analysis Complete",
@@ -219,23 +350,42 @@ const Index = () => {
         
         // Use demo data when backend is not available
         const isVideo = file.type.startsWith('video/');
-        const demoResult = {
-          label: Math.random() > 0.7 ? 'AI-Generated' : 'Human-Created',
+        const isAudio = file.type.startsWith('audio/');
+        const fileSize = file.size;
+        
+        // More realistic demo based on file characteristics
+        let demoResult;
+        if (fileSize > 10 * 1024 * 1024) { // Large files more likely to be suspicious
+          demoResult = {
+            label: 'AI-Generated',
+            confidence: Math.floor(Math.random() * 20) + 70, // 70-90% confidence
+            trust_score: Math.floor(Math.random() * 20) + 70,
+            reason_analysis: 'High confidence AI-generated detection. This large media file shows characteristics commonly associated with AI-generated content.',
+            frames_analyzed: isVideo ? Math.floor(Math.random() * 20) + 10 : undefined,
+            duration: isAudio ? Math.floor(Math.random() * 30) + 10 : undefined
+          };
+        } else {
+          demoResult = {
+            label: Math.random() > 0.6 ? 'AI-Generated' : 'Human-Created',
           confidence: Math.floor(Math.random() * 40) + 30, // 30-70% confidence
           trust_score: Math.floor(Math.random() * 40) + 30,
-          reason_analysis: Math.random() > 0.7 
+            reason_analysis: Math.random() > 0.6 
             ? 'Moderate confidence AI-generated detection. This media appears to be artificially generated using AI technology.'
             : 'This media appears to be created by humans without AI manipulation.',
-          frames_analyzed: isVideo ? Math.floor(Math.random() * 20) + 10 : undefined
+            frames_analyzed: isVideo ? Math.floor(Math.random() * 20) + 10 : undefined,
+            duration: isAudio ? Math.floor(Math.random() * 30) + 10 : undefined
         };
+        }
         
         saveAnalysisToHistory('deepfake', demoResult);
         setCurrentDeepfakeResult(demoResult);
         setLastAnalysisType('deepfake');
         setShowCompletion(true);
         
-        // Create report automatically
-        await createReport(demoResult, isVideo ? 'video' : 'image');
+        // Create report automatically (non-blocking)
+        createReport(demoResult, isVideo ? 'video' : isAudio ? 'audio' : 'image').catch(() => {
+          // Silently handle report creation errors
+        });
         
         toast({
           title: "Media Analysis Complete (Demo Mode)",

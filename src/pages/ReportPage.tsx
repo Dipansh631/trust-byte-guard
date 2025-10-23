@@ -15,6 +15,7 @@ import {
   TrendingUp, Shield, Eye, Download, Calendar, Clock
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { getApiBase, healthCheck } from "@/lib/api";
 
 interface AnalysisReport {
   id: string;
@@ -46,7 +47,29 @@ const ReportPage = () => {
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8000/reports');
+      const isUp = await healthCheck(800);
+      if (!isUp) {
+        // Fallback demo reports
+        setReports([
+          {
+            id: 'demo-1',
+            timestamp: new Date().toISOString(),
+            type: 'email',
+            analysis_data: {
+              result: 'Phishing',
+              confidence: 87,
+              reasons: { urgency: { score: 95, details: ['Time pressure', 'Final warning'] } },
+              score_breakdown: { urgency_indicators: 95, authority_claims: 80, overall_confidence: 87 },
+              label: 'Phishing',
+              trust_score: 87,
+              reason_analysis: 'Multiple phishing indicators detected.'
+            },
+            user_notes: 'Demo report when backend is offline.'
+          }
+        ]);
+        return;
+      }
+      const response = await fetch(`${getApiBase()}/reports`);
       if (response.ok) {
         const data = await response.json();
         setReports(data.reports || []);
@@ -55,7 +78,7 @@ const ReportPage = () => {
       console.error('Failed to fetch reports:', error);
       toast({
         title: "Failed to load reports",
-        description: "Could not connect to the backend server.",
+        description: `Could not connect to the backend at ${getApiBase()}. Showing demo data if available.`,
         variant: "destructive",
       });
     } finally {
@@ -65,7 +88,7 @@ const ReportPage = () => {
 
   const createReport = async (analysisData: any, type: string) => {
     try {
-      const response = await fetch('http://localhost:8000/reports', {
+      const response = await fetch(`${getApiBase()}/reports`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -90,7 +113,7 @@ const ReportPage = () => {
       console.error('Failed to create report:', error);
       toast({
         title: "Failed to create report",
-        description: "Could not save the analysis report.",
+        description: `Could not save the analysis report to ${getApiBase()}.`,
         variant: "destructive",
       });
     }
