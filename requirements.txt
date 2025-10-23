@@ -1,0 +1,32 @@
+# Core FastAPI and web framework dependencies
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9
+pydantic==2.9.2
+
+# Machine Learning and AI dependencies
+scikit-learn==1.5.2
+numpy==2.3.4
+transformers==4.44.2
+torch==2.4.1
+torchvision==0.19.1
+torchaudio==2.4.1
+tensorflow==2.15.0
+tensorflow-gpu==2.15.0
+
+# Computer Vision and Image Processing
+opencv-python==4.10.0.84
+Pillow==10.4.0
+deepface==0.0.79
+mediapipe==0.10.8
+mtcnn==0.1.1
+facenet-pytorch==2.5.3
+
+# Audio Processing
+librosa==0.10.1
+soundfile==0.12.1
+scipy==1.11.4
+
+# Additional utilities
+requests>=2.31.0
+python-dotenv>=1.0.0
